@@ -11,7 +11,9 @@ class VideoClassifier(nn.Module):
 
         self.rnn = nn.LSTM(input_size=512, hidden_size=256, num_layers=2, batch_first=True)
 
-        self.fc = nn.Linear(256, 8)
+        self.fc1 = nn.Linear(256, 128)
+        self.leaky_relu = nn.LeakyReLU(0.2)
+        self.fc2 = nn.Linear(128, 8)
 
     def forward(self, x):
 
@@ -26,6 +28,9 @@ class VideoClassifier(nn.Module):
         x, _ = self.rnn(x)
         x = x[:, -1, :]
 
-        x = self.fc(x)
+        x = self.fc1(x)
+        x = self.leaky_relu(x)
+        x = self.fc2(x)
+
 
         return x
