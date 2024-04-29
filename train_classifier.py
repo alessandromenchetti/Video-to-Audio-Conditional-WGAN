@@ -13,10 +13,7 @@ from video_classifier import VideoClassifier
 def main():
 
     train_mode = True
-    preload = False
-
-    if preload:
-        model_filepath = 'models/video_classifierResRNN_v1.pth'
+    preload = True
 
     full_dataset, class_to_idx, idx_to_class = get_dataset_paths('data', labels=True)
 
@@ -33,17 +30,23 @@ def main():
 
     model = VideoClassifier()
 
-    if preload:
-        model.load_state_dict(torch.load(model_filepath))
-
     criterion = nn.CrossEntropyLoss()
     optimizer = Adam(model.parameters(), lr=0.001)
+    scaler = GradScaler()
+    start_epoch = 0
+
+    if preload:
+        model_filepath = 'models/video_classifierResRNN_v3_e60.pth'
+        model_and_optimizer = torch.load(model_filepath)
+        model.load_state_dict(model_and_optimizer['model_state_dict'])
+        optimizer.load_state_dict(model_and_optimizer['optimizer_state_dict'])
+        scaler.load_state_dict(model_and_optimizer['scaler_state_dict'])
+        start_epoch = model_and_optimizer['epoch']
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     if train_mode:
-        train_model(model, 50, train_loader, device, criterion, optimizer)
-        torch.save(model.state_dict(), 'models/video_classifierResRNN_v1.pth')
+        train_model(model, 60, start_epoch, train_loader, device, criterion, optimizer, scaler)
 
     test_model(model, test_loader, device)
 
@@ -59,11 +62,19 @@ def split_dataset(dataset, test_size=0.1, random_state=None):
     return list(zip(train_paths, train_labels)), list(zip(test_paths, test_labels))
 
 
-def train_model(net, n_epochs, loader, device, criterion, optimizer):
-    scaler = GradScaler()
-    net.to(device)
+def ensure_optimizer_on_device(optimizer, device):
+    for state in optimizer.state.values():
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor):
+                state[k] = v.to(device)
 
-    for epoch in range(n_epochs):
+
+def train_model(net, n_epochs, start_epoch, loader, device, criterion, optimizer, scaler):
+    net.to(device)
+    ensure_optimizer_on_device(optimizer, device)
+    net.train()
+
+    for epoch in range(start_epoch, n_epochs):
         start_time = time.time()
 
         for i, data in enumerate(loader):
@@ -84,7 +95,13 @@ def train_model(net, n_epochs, loader, device, criterion, optimizer):
                 print(f'Epoch {epoch}, Iteration {i + 1}, Loss: {loss.item()}, Time per 100 iterations: {time.time() - start_time}')
                 start_time = time.time()
 
-        torch.save(net.state_dict(), f'models/video_classifierResRNN_v1_{epoch + 1}.pth')
+        checkpoint = {
+            'model_state_dict': net.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scaler_state_dict': scaler.state_dict(),
+            'epoch': epoch + 1
+        }
+        torch.save(checkpoint, f'models/video_classifierResRNN_v3_e{epoch + 1}.pth')
 
     print('Finished Training')
 

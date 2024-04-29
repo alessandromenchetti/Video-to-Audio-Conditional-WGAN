@@ -20,23 +20,33 @@ def get_video_info(video_path):
         print(f"Error processing {video_path}: {e}")
         return None
 
-def save_spectogram(spec, filename, spec_max, spec_min):
+def save_spectogram_and_waveform(spec, filename, spec_max, spec_min):
 
     spec = (spec - spec_min) / (spec_max - spec_min)
 
     img = Image.fromarray((spec.numpy() * 255).astype('uint8'))
     img.save(filename)
 
-def adjust_video_properties(input_path, output_path, start_time, end_time, spec_max, spec_min, target_fps=16, audio_sampling_rate=22050, target_width=224, target_height=224):
+def adjust_video_properties(input_path, output_path, start_time, end_time, spec_max, spec_min, split_ratio=0.9, target_fps=16, audio_sampling_rate=22050, target_width=224, target_height=224):
     """
     Adjusts the video frame rate to target_fps, converts audio to 22050 Hz mono,
     and resizes the video to fit the target height with padding to match the target width.
     """
     try:
         stream = ffmpeg.input(input_path, ss=start_time, to=end_time)
+        probe = ffmpeg.probe(input_path)
+        video_info = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+        original_width = int(video_info['width'])
+        original_height = int(video_info['height'])
 
-        video_stream = stream.video.filter('fps', fps=target_fps).filter('scale', -2, target_height)
-        video_stream = video_stream.filter('crop', f'min(iw,{target_width})', target_height, '0', '0')
+        if original_width > original_height:
+            scale_width = target_width
+            scale_height = -2
+        else:
+            scale_width = -2
+            scale_height = target_height
+
+        video_stream = stream.video.filter('fps', fps=target_fps).filter('scale', scale_width, scale_height)
         video_stream = video_stream.filter('pad', target_width, target_height, '(ow-iw)/2', '(oh-ih)/2')
 
         audio_stream = stream.audio.filter('aformat', sample_rates=audio_sampling_rate, channel_layouts='mono')
@@ -49,12 +59,12 @@ def adjust_video_properties(input_path, output_path, start_time, end_time, spec_
         mel_spec = MelSpectrogram(sample_rate=sample_rate, n_fft=2048, hop_length=512, n_mels=128)(waveform)
 
         epsilon = 1e-10
-        log_mel_spec = torch.log2(mel_spec + epsilon)
+        log_mel_spec = torch.log(mel_spec + epsilon)
 
         log_mel_spec = log_mel_spec[:, :, :128]
 
         spec_filename = output_path.rsplit('.', 1)[0] + '.png'
-        save_spectogram(log_mel_spec[0], spec_filename, spec_max, spec_min)
+        save_spectogram_and_waveform(log_mel_spec[0], spec_filename,  spec_max, spec_min)
 
     except ffmpeg.Error as e:
         print(f"Error processing {input_path}: {e}")
@@ -77,7 +87,7 @@ def process_video(class_name, video_file, spec_max, spec_min):
             end_time = start_time + 3
 
             if frame_rate > 16:
-                adjust_video_properties(video_path, output_path, start_time, end_time, spec_max, spec_min, 16, 22050, 224, 224)
+                adjust_video_properties(video_path, output_path, start_time, end_time, spec_max, spec_min, 0.9, 16, 22050, 224, 224)
                 print(f"Processed {video_path}")
             else:
                 print(f"Skipped {video_path} segment {i} due to frame rate <= 16 fps")
@@ -87,7 +97,8 @@ def process_video(class_name, video_file, spec_max, spec_min):
 
 def remove_corrupt_videos(root_dir):
     """Remove corrupt videos from the dataset."""
-    for class_name in os.listdir(root_dir):
+    # for class_name in os.listdir(root_dir):
+    for class_name in ['fireworks']:
         class_dir = os.path.join(root_dir, class_name)
         for video_file in os.listdir(class_dir):
 
@@ -95,6 +106,7 @@ def remove_corrupt_videos(root_dir):
                 continue
 
             video_path = os.path.join(class_dir, video_file)
+            spectogram_path = video_path.rsplit('.', 1)[0] + '.png'
             try:
                 probe = ffmpeg.probe(video_path)
                 video_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'video']
@@ -105,6 +117,11 @@ def remove_corrupt_videos(root_dir):
 
                 if frame_count < 48:
                     raise Exception(f"Video has less than 48 frames: {frame_count}")
+
+                with Image.open(spectogram_path) as img:
+                    if img.size != (128, 128):
+                        raise Exception(f"Spectogram has incorrect size: {img.size}")
+
             except (ffmpeg.Error, Exception) as e:
                 print(f"Removing corrupt video (and corresponding spectogram): {video_path} due to error: {e}")
                 os.remove(video_path)
@@ -117,7 +134,8 @@ def main():
         spec_max = float(lines[0].strip())
         spec_min = float(lines[1].strip())
 
-    classes = os.listdir("VAS")
+    # classes = os.listdir("VAS")
+    classes = ['fireworks']
 
     with ProcessPoolExecutor() as executor:
         for class_name in classes:
