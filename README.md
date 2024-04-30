@@ -1,0 +1,1 @@
+Video clips with generated audio are located at test_set/videos. Real and generated spectograms are located at test_set/specs. Running instructions coming soon, need to update scripts to take in arguments instead of modifying flags within code.
