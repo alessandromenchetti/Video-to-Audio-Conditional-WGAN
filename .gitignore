@@ -14,5 +14,7 @@ test_v6/
 test_v7/
 test_v8/
 test_v9/
-test_set/
+test_set/specs/
+test_set/specs_npy/
+test_set/wavs/
 temp/
