@@ -97,8 +97,7 @@ def process_video(class_name, video_file, spec_max, spec_min):
 
 def remove_corrupt_videos(root_dir):
     """Remove corrupt videos from the dataset."""
-    # for class_name in os.listdir(root_dir):
-    for class_name in ['fireworks']:
+    for class_name in os.listdir(root_dir):
         class_dir = os.path.join(root_dir, class_name)
         for video_file in os.listdir(class_dir):
 
@@ -134,8 +133,8 @@ def main():
         spec_max = float(lines[0].strip())
         spec_min = float(lines[1].strip())
 
-    # classes = os.listdir("VAS")
-    classes = ['fireworks']
+    classes = os.listdir("VAS")
+    # classes = ['fireworks']
 
     with ProcessPoolExecutor() as executor:
         for class_name in classes:
